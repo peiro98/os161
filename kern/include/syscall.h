@@ -30,7 +30,7 @@
 #ifndef _SYSCALL_H_
 #define _SYSCALL_H_
 
-
+#include <types.h>
 #include <cdefs.h> /* for __DEAD */
 struct trapframe; /* from <machine/trapframe.h> */
 
@@ -58,5 +58,12 @@ __DEAD void enter_new_process(int argc, userptr_t argv, userptr_t env,
 
 int sys_reboot(int code);
 int sys___time(userptr_t user_seconds, userptr_t user_nanoseconds);
+
+#include "opt-asst1.h"
+
+#if OPT_ASST1
+// implemented in syscall/file_syscalls.c
+ssize_t sys_write(int filehandle, const void *buf, size_t size);
+#endif
 
 #endif /* _SYSCALL_H_ */

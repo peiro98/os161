@@ -390,6 +390,9 @@ file      main/menu.c
 defoption hello
 optfile   hello main/hello.c
 
+defoption asst1
+optfile   asst1 syscall/file_syscalls.c
+
 ########################################
 #                                      #
 #             Filesystems              #
