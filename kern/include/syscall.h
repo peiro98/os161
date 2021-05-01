@@ -64,6 +64,7 @@ int sys___time(userptr_t user_seconds, userptr_t user_nanoseconds);
 #if OPT_ASST1
 // implemented in syscall/file_syscalls.c
 ssize_t sys_write(int filehandle, const void *buf, size_t size);
+ssize_t sys_read(int filehandle, void *buf, size_t size);
 #endif
 
 #endif /* _SYSCALL_H_ */
