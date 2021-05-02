@@ -33,6 +33,10 @@
 #include <addrspace.h>
 #include <vm.h>
 #include <proc.h>
+#include <spl.h>
+#include <mips/tlb.h>
+
+#define N_STACKPAGES 18
 
 /*
  * Note! If OPT_DUMBVM is set, as is the case until you start the VM
@@ -46,30 +50,60 @@ as_create(void)
 	struct addrspace *as;
 
 	as = kmalloc(sizeof(struct addrspace));
-	if (as == NULL) {
+	if (as == NULL)
+	{
 		return NULL;
 	}
 
-	/*
-	 * Initialize as needed.
-	 */
+	// initialize the parameters of addrspace to 0
+	as->as_vbase1 = 0;
+	as->as_pbase1 = 0;
+	as->as_npages1 = 0;
+	as->as_vbase2 = 0;
+	as->as_pbase2 = 0;
+	as->as_npages2 = 0;
+	as->as_stackpbase = 0;
 
 	return as;
 }
 
-int
-as_copy(struct addrspace *old, struct addrspace **ret)
+int as_copy(struct addrspace *old, struct addrspace **ret)
 {
 	struct addrspace *newas;
 
 	newas = as_create();
-	if (newas==NULL) {
+	if (newas == NULL)
+	{
 		return ENOMEM;
 	}
 
-	/*
-	 * Write this.
-	 */
+	newas->as_vbase1 = old->as_vbase1;
+	newas->as_npages1 = old->as_npages1;
+	newas->as_vbase2 = old->as_vbase2;
+	newas->as_npages2 = old->as_npages2;
+
+	/* (Mis)use as_prepare_load to allocate some physical memory. */
+	if (as_prepare_load(newas))
+	{
+		as_destroy(newas);
+		return ENOMEM;
+	}
+
+	KASSERT(newas->as_pbase1 != 0);
+	KASSERT(newas->as_pbase2 != 0);
+	KASSERT(newas->as_stackpbase != 0);
+
+	memmove((void *)PADDR_TO_KVADDR(newas->as_pbase1),
+			(const void *)PADDR_TO_KVADDR(old->as_pbase1),
+			old->as_npages1 * PAGE_SIZE);
+
+	memmove((void *)PADDR_TO_KVADDR(newas->as_pbase2),
+			(const void *)PADDR_TO_KVADDR(old->as_pbase2),
+			old->as_npages2 * PAGE_SIZE);
+
+	memmove((void *)PADDR_TO_KVADDR(newas->as_stackpbase),
+			(const void *)PADDR_TO_KVADDR(old->as_stackpbase),
+			N_STACKPAGES * PAGE_SIZE);
 
 	(void)old;
 
@@ -77,23 +111,20 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	return 0;
 }
 
-void
-as_destroy(struct addrspace *as)
+void as_destroy(struct addrspace *as)
 {
-	/*
-	 * Clean up as needed.
-	 */
-
+	// TODO
 	kfree(as);
 }
 
-void
-as_activate(void)
+void as_activate(void)
 {
+	int i, spl;
 	struct addrspace *as;
 
 	as = proc_getas();
-	if (as == NULL) {
+	if (as == NULL)
+	{
 		/*
 		 * Kernel thread without an address space; leave the
 		 * prior address space in place.
@@ -101,13 +132,18 @@ as_activate(void)
 		return;
 	}
 
-	/*
-	 * Write this.
-	 */
+	/* Disable interrupts on this CPU while frobbing the TLB. */
+	spl = splhigh();
+
+	for (i = 0; i < NUM_TLB; i++)
+	{
+		tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
+	}
+
+	splx(spl);
 }
 
-void
-as_deactivate(void)
+void as_deactivate(void)
 {
 	/*
 	 * Write this. For many designs it won't need to actually do
@@ -126,57 +162,91 @@ as_deactivate(void)
  * moment, these are ignored. When you write the VM system, you may
  * want to implement them.
  */
-int
-as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
-		 int readable, int writeable, int executable)
+int as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
+					 int readable, int writeable, int executable)
 {
-	/*
-	 * Write this.
-	 */
 
-	(void)as;
-	(void)vaddr;
-	(void)memsize;
+	size_t npages;
+
+	/* Align the region. First, the base... */
+	memsize += vaddr & ~(vaddr_t)PAGE_FRAME;
+	vaddr &= PAGE_FRAME;
+
+	/* ...and now the length. */
+	memsize = (memsize + PAGE_SIZE - 1) & PAGE_FRAME;
+
+	npages = memsize / PAGE_SIZE;
+
+	/* We don't use these - all pages are read-write */
 	(void)readable;
 	(void)writeable;
 	(void)executable;
+
+	if (as->as_vbase1 == 0)
+	{
+		as->as_vbase1 = vaddr;
+		as->as_npages1 = npages;
+		return 0;
+	}
+
+	if (as->as_vbase2 == 0)
+	{
+		as->as_vbase2 = vaddr;
+		as->as_npages2 = npages;
+		return 0;
+	}
+
 	return ENOSYS;
 }
 
-int
-as_prepare_load(struct addrspace *as)
+static void as_zero_region(paddr_t paddr, unsigned npages)
 {
-	/*
-	 * Write this.
-	 */
+	bzero((void *)PADDR_TO_KVADDR(paddr), npages * PAGE_SIZE);
+}
 
+int as_prepare_load(struct addrspace *as)
+{
+	KASSERT(as->as_pbase1 == 0);
+	KASSERT(as->as_pbase2 == 0);
+	KASSERT(as->as_stackpbase == 0);
+
+	as->as_pbase1 = alloc_kpages(as->as_npages1) - MIPS_KSEG0;
+	if (as->as_pbase1 == 0)
+	{
+		return ENOMEM;
+	}
+
+	as->as_pbase2 = alloc_kpages(as->as_npages2) - MIPS_KSEG0;
+	if (as->as_pbase2 == 0)
+	{
+		return ENOMEM;
+	}
+
+	as->as_stackpbase = alloc_kpages(N_STACKPAGES) - MIPS_KSEG0;
+	if (as->as_stackpbase == 0)
+	{
+		return ENOMEM;
+	}
+
+	as_zero_region(as->as_pbase1, as->as_npages1);
+	as_zero_region(as->as_pbase2, as->as_npages2);
+	as_zero_region(as->as_stackpbase, N_STACKPAGES);
+
+	return 0;
+}
+
+int as_complete_load(struct addrspace *as)
+{
 	(void)as;
 	return 0;
 }
 
-int
-as_complete_load(struct addrspace *as)
+int as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 {
-	/*
-	 * Write this.
-	 */
-
-	(void)as;
-	return 0;
-}
-
-int
-as_define_stack(struct addrspace *as, vaddr_t *stackptr)
-{
-	/*
-	 * Write this.
-	 */
-
-	(void)as;
+	KASSERT(as->as_stackpbase != 0);
 
 	/* Initial user-level stack pointer */
 	*stackptr = USERSTACK;
 
 	return 0;
 }
-
