@@ -40,6 +40,8 @@
 #include <current.h>
 #include <synch.h>
 
+#include "opt-lock_with_semaphores.h"
+
 ////////////////////////////////////////////////////////////
 //
 // Semaphore.
@@ -157,6 +159,26 @@ lock_create(const char *name)
 	HANGMAN_LOCKABLEINIT(&lock->lk_hangman, lock->lk_name);
 
         // add stuff here as needed
+#if OPT_LOCK_WITH_SEMAPHORES
+
+    // initialize the binary semaphore
+    lock->sem = sem_create(name, 1);
+    if (lock->sem == NULL)
+    {
+        return NULL;
+    }
+
+    // initially no one is holding the lock
+    lock->owner = NULL;
+
+    // initialize the spinlock
+    lock->spinlock = kmalloc(sizeof(lock->spinlock));
+    if (lock->spinlock == NULL) {
+        return NULL;
+    }
+    spinlock_init(lock->spinlock);
+
+#endif
 
         return lock;
 }
@@ -167,6 +189,20 @@ lock_destroy(struct lock *lock)
         KASSERT(lock != NULL);
 
         // add stuff here as needed
+#if OPT_LOCK_WITH_SEMAPHORES
+
+    if (lock->owner != NULL)
+    {
+        panic("Called lock_destroy on an acquired lock");
+        return;
+    }
+
+    sem_destroy(lock->sem);
+
+    spinlock_cleanup(lock->spinlock);
+
+    kfree(lock->spinlock);
+#endif
 
         kfree(lock->lk_name);
         kfree(lock);
@@ -175,36 +211,74 @@ lock_destroy(struct lock *lock)
 void
 lock_acquire(struct lock *lock)
 {
-	/* Call this (atomically) before waiting for a lock */
-	//HANGMAN_WAIT(&curthread->t_hangman, &lock->lk_hangman);
+#if OPT_LOCK_WITH_SEMAPHORES
+    /* Call this (atomically) before waiting for a lock */
+    HANGMAN_WAIT(&curthread->t_hangman, &lock->lk_hangman);
 
-        // Write this
+    // spinlock_acquire(lock->spinlock);
 
-        (void)lock;  // suppress warning until code gets written
+    P(lock->sem);
+    lock->owner = curthread;
+    // spinlock_release(lock->spinlock);
 
-	/* Call this (atomically) once the lock is acquired */
-	//HANGMAN_ACQUIRE(&curthread->t_hangman, &lock->lk_hangman);
+    /* Call this (atomically) once the lock is acquired */
+    HANGMAN_ACQUIRE(&curthread->t_hangman, &lock->lk_hangman);
+
+#else
+    (void)lock;
+#endif
 }
 
 void
 lock_release(struct lock *lock)
 {
-	/* Call this (atomically) when the lock is released */
-	//HANGMAN_RELEASE(&curthread->t_hangman, &lock->lk_hangman);
+#if OPT_LOCK_WITH_SEMAPHORES
 
-        // Write this
+    spinlock_acquire(lock->spinlock);
+    
+    if (lock->owner != curthread) {
+        spinlock_release(lock->spinlock);
+        panic("How dare you?!");
+        return;
+    }
 
-        (void)lock;  // suppress warning until code gets written
+    // release the semaphore
+    V(lock->sem);
+
+    // set owner to NULL
+    lock->owner = NULL;
+    
+    spinlock_release(lock->spinlock);
+
+    /* Call this (atomically) when the lock is released */
+    HANGMAN_RELEASE(&curthread->t_hangman, &lock->lk_hangman);
+
+#else 
+
+    (void) lock;
+
+#endif
 }
 
 bool
 lock_do_i_hold(struct lock *lock)
 {
-        // Write this
+#if OPT_LOCK_WITH_SEMAPHORES
+    bool own = false;
 
-        (void)lock;  // suppress warning until code gets written
+    spinlock_acquire(lock->spinlock);
+    if (lock->owner == curthread) {
+        own = true;
+    }
+    spinlock_release(lock->spinlock);
 
-        return true; // dummy until code gets written
+    return own;
+#else
+
+    (void)lock;  // suppress warning until code gets written
+
+    return true; // dummy until code gets written
+#endif
 }
 
 ////////////////////////////////////////////////////////////
