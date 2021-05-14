@@ -11,7 +11,7 @@
 #include <mips/tlb.h>
 #include <kern/errno.h>
 
-#define KVADDR_TO_PADDR(kvaddr) ((kvaddr) + MIPS_KSEG0)
+#define KVADDR_TO_PADDR(kvaddr) ((kvaddr) - MIPS_KSEG0)
 
 static uint8_t *bitmap;
 static unsigned int *allocations;
@@ -205,6 +205,8 @@ vaddr_t alloc_kpages(unsigned npages) {
             {
                 bitmap[i + k] = 1;
             }
+
+			allocations[i - size + 1] = npages;
 
             return PADDR_TO_KVADDR((i - size + 1) * PAGE_SIZE);
         }

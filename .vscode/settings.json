@@ -1,0 +1,11 @@
+{
+    "files.associations": {
+        "vm.h": "c",
+        "mainbus.h": "c",
+        "lib.h": "c",
+        "types.h": "c",
+        "proc.h": "c",
+        "cpu.h": "c",
+        "spl.h": "c"
+    }
+}
