@@ -42,6 +42,7 @@
 
 #include "opt-lock_with_semaphores.h"
 #include "opt-lock_wchan_spinlock.h"
+#include "opt-cv_implementation.h"
 
 ////////////////////////////////////////////////////////////
 //
@@ -166,13 +167,7 @@ lock_create(const char *name)
         lock->owner = NULL;
 
         // initialize the spinlock
-        lock->spinlock = kmalloc(sizeof(lock->spinlock));
-        if (lock->spinlock == NULL) {
-                kfree(lock->lk_name);
-                kfree(lock);
-                return NULL;
-        }
-        spinlock_init(lock->spinlock);
+        spinlock_init(&lock->spinlock);
 
 #if OPT_LOCK_WITH_SEMAPHORES
         // initialize the binary semaphore
@@ -184,6 +179,7 @@ lock_create(const char *name)
                 return NULL;
         }
 #else
+        // initialize the wait channel
         lock->lk_wchan = wchan_create(lock->lk_name);
 	if (lock->lk_wchan == NULL) {
 		kfree(lock->lk_name);
@@ -216,8 +212,8 @@ lock_destroy(struct lock *lock)
 #else
         wchan_destroy(lock->lk_wchan);
 #endif
-        spinlock_cleanup(lock->spinlock);
-        kfree(lock->spinlock);
+        spinlock_cleanup(&lock->spinlock);
+        kfree(&lock->spinlock);
 #endif
 
         kfree(lock->lk_name);
@@ -240,17 +236,17 @@ lock_acquire(struct lock *lock)
         P(lock->sem);
 
         // acquire the spinlock and modify the owner thread
-        spinlock_acquire(lock->spinlock);
+        spinlock_acquire(&lock->spinlock);
         lock->owner = curthread;
-        spinlock_release(lock->spinlock);
+        spinlock_release(&lock->spinlock);
 #else
         // acquire the spinlock and wait
-        spinlock_acquire(lock->spinlock);
+        spinlock_acquire(&lock->spinlock);
         while (lock->owner) {
-                wchan_sleep(lock->lk_wchan, lock->spinlock);
+                wchan_sleep(lock->lk_wchan, &lock->spinlock);
         }
         lock->owner = curthread;
-        spinlock_release(lock->spinlock);
+        spinlock_release(&lock->spinlock);
 #endif
 
 #else
@@ -262,10 +258,10 @@ void
 lock_release(struct lock *lock)
 {
 #if OPT_LOCK_WITH_SEMAPHORES || OPT_LOCK_WCHAN_SPINLOCK
-        spinlock_acquire(lock->spinlock);
+        spinlock_acquire(&lock->spinlock);
         
         if (lock->owner != curthread) {
-                spinlock_release(lock->spinlock);
+                spinlock_release(&lock->spinlock);
                 panic("How dare you?!");
                 return;
         }
@@ -274,13 +270,13 @@ lock_release(struct lock *lock)
         // release the semaphore
         V(lock->sem);
 #else
-        wchan_wakeone(lock->lk_wchan, lock->spinlock);
+        wchan_wakeone(lock->lk_wchan, &lock->spinlock);
 #endif
 
         // set owner to NULL
         lock->owner = NULL;
 
-        spinlock_release(lock->spinlock);
+        spinlock_release(&lock->spinlock);
 #else
     (void) lock;
 #endif
@@ -292,9 +288,9 @@ lock_do_i_hold(struct lock *lock)
 #if OPT_LOCK_WITH_SEMAPHORES || OPT_LOCK_WCHAN_SPINLOCK
         bool own = false;
 
-        spinlock_acquire(lock->spinlock);
+        spinlock_acquire(&lock->spinlock);
         own = lock->owner == curthread;
-        spinlock_release(lock->spinlock);
+        spinlock_release(&lock->spinlock);
 
         return own;
 #else
@@ -326,7 +322,17 @@ cv_create(const char *name)
                 return NULL;
         }
 
-        // add stuff here as needed
+#if (OPT_LOCK_WITH_SEMAPHORES || OPT_LOCK_WCHAN_SPINLOCK) && OPT_CV_IMPLEMENTATION
+        // initialize the spinlock
+        spinlock_init(&cv->spinlock);
+
+        cv->cv_wchan = wchan_create(cv->cv_name);
+	if (cv->cv_wchan == NULL) {
+		kfree(cv->cv_name);
+		kfree(cv);
+		return NULL;
+	}
+#endif
 
         return cv;
 }
@@ -336,7 +342,12 @@ cv_destroy(struct cv *cv)
 {
         KASSERT(cv != NULL);
 
-        // add stuff here as needed
+#if (OPT_LOCK_WITH_SEMAPHORES || OPT_LOCK_WCHAN_SPINLOCK) && OPT_CV_IMPLEMENTATION
+
+        wchan_destroy(cv->cv_wchan);
+        spinlock_cleanup(&cv->spinlock);
+        
+#endif
 
         kfree(cv->cv_name);
         kfree(cv);
@@ -345,23 +356,63 @@ cv_destroy(struct cv *cv)
 void
 cv_wait(struct cv *cv, struct lock *lock)
 {
+
+#if (OPT_LOCK_WITH_SEMAPHORES || OPT_LOCK_WCHAN_SPINLOCK) && OPT_CV_IMPLEMENTATION
+        // verify current thread is holding the lock
+        KASSERT(lock_do_i_hold(lock));
+
+        // acquire the spinlock
+        spinlock_acquire(&cv->spinlock);
+
+        // release the lock and put curthread to sleep
+        lock_release(lock);
+        wchan_sleep(cv->cv_wchan, &cv->spinlock);
+        spinlock_release(&cv->spinlock);
+
+        // reacquire the lock
+        lock_acquire(lock);
+
+#else
         // Write this
         (void)cv;    // suppress warning until code gets written
         (void)lock;  // suppress warning until code gets written
+
+#endif
 }
 
 void
 cv_signal(struct cv *cv, struct lock *lock)
 {
+
+#if (OPT_LOCK_WITH_SEMAPHORES || OPT_LOCK_WCHAN_SPINLOCK) && OPT_CV_IMPLEMENTATION
+        // verify current thread is holding the lock
+        KASSERT(lock_do_i_hold(lock));
+
+        // acquire the spinlock and wake one sleeping thread
+        spinlock_acquire(&cv->spinlock);
+        wchan_wakeone(cv->cv_wchan, &cv->spinlock);
+        spinlock_release(&cv->spinlock);
+#else
         // Write this
 	(void)cv;    // suppress warning until code gets written
 	(void)lock;  // suppress warning until code gets written
+#endif
 }
 
 void
 cv_broadcast(struct cv *cv, struct lock *lock)
 {
+#if (OPT_LOCK_WITH_SEMAPHORES || OPT_LOCK_WCHAN_SPINLOCK) && OPT_CV_IMPLEMENTATION
+        // verify current thread is holding the lock
+        KASSERT(lock_do_i_hold(lock));
+
+        // acquire the spinlock and wake all the sleeping threads
+        spinlock_acquire(&cv->spinlock);
+        wchan_wakeall(cv->cv_wchan, &cv->spinlock);
+        spinlock_release(&cv->spinlock);
+#else
 	// Write this
 	(void)cv;    // suppress warning until code gets written
 	(void)lock;  // suppress warning until code gets written
+#endif
 }

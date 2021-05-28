@@ -39,6 +39,7 @@
 
 #include "opt-lock_with_semaphores.h"
 #include "opt-lock_wchan_spinlock.h"
+#include "opt-cv_implementation.h"
 
 /*
  * Dijkstra-style semaphore.
@@ -83,7 +84,7 @@ struct lock
 
 #if OPT_LOCK_WITH_SEMAPHORES || OPT_LOCK_WCHAN_SPINLOCK
         struct thread *owner;
-        struct spinlock *spinlock;
+        struct spinlock spinlock;
 
 #if OPT_LOCK_WITH_SEMAPHORES
         struct semaphore *sem;
@@ -131,6 +132,10 @@ struct cv {
         char *cv_name;
         // add what you need here
         // (don't forget to mark things volatile as needed)
+#if (OPT_LOCK_WITH_SEMAPHORES || OPT_LOCK_WCHAN_SPINLOCK) && OPT_CV_IMPLEMENTATION
+        struct wchan *cv_wchan;
+        struct spinlock spinlock;
+#endif  
 };
 
 struct cv *cv_create(const char *name);
