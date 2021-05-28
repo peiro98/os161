@@ -158,8 +158,6 @@ lock_create(const char *name)
                 return NULL;
         }
 
-	HANGMAN_LOCKABLEINIT(&lock->lk_hangman, lock->lk_name);
-
         // add stuff here as needed
 #if OPT_LOCK_WITH_SEMAPHORES || OPT_LOCK_WCHAN_SPINLOCK
 
@@ -207,13 +205,13 @@ lock_destroy(struct lock *lock)
                 return;
         }
 
+        spinlock_cleanup(&lock->spinlock);
+
 #if OPT_LOCK_WITH_SEMAPHORES
         sem_destroy(lock->sem);
 #else
         wchan_destroy(lock->lk_wchan);
 #endif
-        spinlock_cleanup(&lock->spinlock);
-        kfree(&lock->spinlock);
 #endif
 
         kfree(lock->lk_name);
@@ -225,6 +223,7 @@ lock_acquire(struct lock *lock)
 {
 
 #if OPT_LOCK_WITH_SEMAPHORES || OPT_LOCK_WCHAN_SPINLOCK
+        KASSERT(lock);
 
         // do not block inside interrupts
         KASSERT(curthread->t_in_interrupt == false);
@@ -237,6 +236,7 @@ lock_acquire(struct lock *lock)
 
         // acquire the spinlock and modify the owner thread
         spinlock_acquire(&lock->spinlock);
+        KASSERT(lock->owner == NULL);
         lock->owner = curthread;
         spinlock_release(&lock->spinlock);
 #else
@@ -266,15 +266,15 @@ lock_release(struct lock *lock)
                 return;
         }
 
+        // set owner to NULL
+        lock->owner = NULL;
+
 #if OPT_LOCK_WITH_SEMAPHORES
         // release the semaphore
         V(lock->sem);
 #else
         wchan_wakeone(lock->lk_wchan, &lock->spinlock);
 #endif
-
-        // set owner to NULL
-        lock->owner = NULL;
 
         spinlock_release(&lock->spinlock);
 #else
@@ -356,8 +356,10 @@ cv_destroy(struct cv *cv)
 void
 cv_wait(struct cv *cv, struct lock *lock)
 {
-
 #if (OPT_LOCK_WITH_SEMAPHORES || OPT_LOCK_WCHAN_SPINLOCK) && OPT_CV_IMPLEMENTATION
+        KASSERT(lock);
+        KASSERT(cv);
+
         // verify current thread is holding the lock
         KASSERT(lock_do_i_hold(lock));
 
@@ -383,8 +385,10 @@ cv_wait(struct cv *cv, struct lock *lock)
 void
 cv_signal(struct cv *cv, struct lock *lock)
 {
-
 #if (OPT_LOCK_WITH_SEMAPHORES || OPT_LOCK_WCHAN_SPINLOCK) && OPT_CV_IMPLEMENTATION
+        KASSERT(lock);
+        KASSERT(cv);
+
         // verify current thread is holding the lock
         KASSERT(lock_do_i_hold(lock));
 
@@ -403,6 +407,9 @@ void
 cv_broadcast(struct cv *cv, struct lock *lock)
 {
 #if (OPT_LOCK_WITH_SEMAPHORES || OPT_LOCK_WCHAN_SPINLOCK) && OPT_CV_IMPLEMENTATION
+        KASSERT(lock);
+        KASSERT(cv);
+
         // verify current thread is holding the lock
         KASSERT(lock_do_i_hold(lock));
 
