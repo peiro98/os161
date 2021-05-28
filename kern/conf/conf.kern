@@ -447,3 +447,4 @@ optfile net	test/nettest.c
 
 # Lab3: implementation of locks using 
 defoption   lock_with_semaphores
+defoption   lock_wchan_spinlock
