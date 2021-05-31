@@ -36,6 +36,13 @@
 #include <current.h>
 #include <syscall.h>
 
+// assignments
+#include "opt-asst1.h"
+
+#if OPT_ASST1
+//#include <kern/unistd.h>
+#endif
+
 
 /*
  * System call dispatcher.
@@ -110,6 +117,22 @@ syscall(struct trapframe *tf)
 		break;
 
 	    /* Add stuff here */
+
+#if OPT_ASST1
+		case SYS_write:
+		err = sys_write((int)tf->tf_a0, (const void*)tf->tf_a1, 
+				(size_t) tf->tf_a2);
+		break;
+
+		case SYS_read:
+		err = sys_read((int)tf->tf_a0, (void*)tf->tf_a1, 
+				(size_t) tf->tf_a2);
+		break;
+
+		case SYS__exit:
+		err = sys_exit(curthread, (int)tf->tf_a0);
+		break;
+#endif
 
 	    default:
 		kprintf("Unknown syscall %d\n", callno);
