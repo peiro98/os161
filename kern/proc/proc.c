@@ -365,6 +365,9 @@ int proc_wait (struct proc *p) {
 	exit_code = p->p_exit_code;
 	lock_release(p->p_exit_cv_lock);
 
+	// destroy the address space
+	proc_destroy(p);
+
 	return exit_code;
 }
 

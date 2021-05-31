@@ -19,6 +19,9 @@ int sys_exit(struct thread* calling_thread, int exit_code) {
     struct proc *proc;
     proc = calling_thread->t_proc;
 
+    // detach a thread 
+    proc_remthread(calling_thread);
+
 #if OPT_WAIT_PID
 
     // set the exit code and signal the conditional variable
@@ -27,10 +30,13 @@ int sys_exit(struct thread* calling_thread, int exit_code) {
     cv_broadcast(proc->p_exit_cv, proc->p_exit_cv_lock);
     lock_release(proc->p_exit_cv_lock);
 
-#endif
+#else 
     
-    // get the address space of the current process
+    // destroy the address space
     as_destroy(proc->p_addrspace);
+
+#endif
+
     thread_exit();
 
     return 0;
