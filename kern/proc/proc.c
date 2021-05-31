@@ -49,6 +49,8 @@
 #include <addrspace.h>
 #include <vnode.h>
 
+#include "opt-wait_pid.h"
+
 /*
  * The process for the kernel; this holds all the kernel-only threads.
  */
@@ -81,6 +83,29 @@ proc_create(const char *name)
 
 	/* VFS fields */
 	proc->p_cwd = NULL;
+
+#if OPT_WAIT_PID
+
+	/* initialize the condition variable for process termination */
+	proc->p_exit_cv_lock = lock_create(proc->p_name);
+	if (proc->p_exit_cv_lock == NULL) {
+		kfree(proc->p_name);
+		kfree(proc);
+		return NULL;
+	}
+
+	proc->p_exit_cv = cv_create(proc->p_name);
+	if (proc->p_exit_cv == NULL) {
+		lock_destroy(proc->p_exit_cv_lock);
+		kfree(proc->p_name);
+		kfree(proc);
+		return NULL;
+	}
+
+	/* set initial process exit code to 0xFFFF */
+	proc->p_exit_code = 0xFFFF;
+
+#endif
 
 	return proc;
 }
@@ -167,6 +192,11 @@ proc_destroy(struct proc *proc)
 
 	KASSERT(proc->p_numthreads == 0);
 	spinlock_cleanup(&proc->p_lock);
+
+#if OPT_WAIT_PID
+	lock_destroy(proc->p_exit_cv_lock);
+	cv_destroy(proc->p_exit_cv);
+#endif
 
 	kfree(proc->p_name);
 	kfree(proc);
@@ -318,3 +348,24 @@ proc_setas(struct addrspace *newas)
 	spinlock_release(&proc->p_lock);
 	return oldas;
 }
+
+#if OPT_WAIT_PID
+
+/**
+ * Wait for process termination
+ */
+int proc_wait (struct proc *p) {
+	int exit_code;
+
+	// acquire the spinlock of the process
+	lock_acquire(p->p_exit_cv_lock);
+	while (p->p_exit_code == 0xFFFF) { // while running
+		cv_wait(p->p_exit_cv, p->p_exit_cv_lock);
+	}
+	exit_code = p->p_exit_code;
+	lock_release(p->p_exit_cv_lock);
+
+	return exit_code;
+}
+
+#endif

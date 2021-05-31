@@ -453,3 +453,6 @@ optfile net	test/nettest.c
 defoption   lock_with_semaphores
 defoption   lock_wchan_spinlock
 defoption   cv_implementation
+
+# Lab4: implementation of waitpid
+defoption wait_pid
