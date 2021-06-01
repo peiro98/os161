@@ -31,6 +31,7 @@
 #define _SYSCALL_H_
 
 #include "opt-asst1.h"
+#include "opt-wait_pid.h"
 
 #include <types.h>
 #include <cdefs.h> /* for __DEAD */
@@ -73,5 +74,8 @@ ssize_t sys_read(int filehandle, void *buf, size_t size);
 // implemented in syscall/proc_syscalls.c
 int sys_exit(struct thread* calling_thread, int exit_code);
 #endif
+
+// implemented in syscall/proc_syscalls.c
+pid_t sys_waitpid (pid_t pid, int *returncode, int flags);
 
 #endif /* _SYSCALL_H_ */

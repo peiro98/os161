@@ -5,6 +5,7 @@
 #include <proc.h>
 #include <addrspace.h>
 #include <synch.h>
+#include <proc.h>
 
 #include <kern/unistd.h>
 
@@ -40,4 +41,22 @@ int sys_exit(struct thread* calling_thread, int exit_code) {
     thread_exit();
 
     return 0;
+}
+
+pid_t sys_waitpid (pid_t pid, int *returncode, int flags) {
+
+#if OPT_WAIT_PID
+    struct proc *p = proc_get(pid);
+    if (p == NULL) {
+        return -1;
+    }
+
+    *returncode = proc_wait(p);
+#else 
+    (void)pid;
+    (void)returncode;
+#endif
+    (void)flags;
+    
+    return pid;
 }

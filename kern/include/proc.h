@@ -76,6 +76,8 @@ struct proc {
 	/* add more material here as needed */
 
 #if OPT_WAIT_PID
+	pid_t pid;
+
 	/* conditional variable used to wait for process termination */
 	struct lock *p_exit_cv_lock;
 	struct cv *p_exit_cv;
@@ -112,6 +114,8 @@ struct addrspace *proc_setas(struct addrspace *);
 #if OPT_WAIT_PID
 /* Wait for process termination */
 int proc_wait (struct proc *p);
+
+struct proc *proc_get(pid_t pid);
 #endif
 
 #endif /* _PROC_H_ */

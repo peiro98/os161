@@ -48,6 +48,7 @@
 #include <current.h>
 #include <addrspace.h>
 #include <vnode.h>
+#include <kern/limits.h>
 
 #include "opt-wait_pid.h"
 
@@ -55,6 +56,18 @@
  * The process for the kernel; this holds all the kernel-only threads.
  */
 struct proc *kproc;
+
+#if OPT_WAIT_PID
+
+/*
+ * Process table: each entry of the table associated the pid_t
+ * identified by the array index to the corresponding process struct pointer.
+ * 
+ * For the sake of simplicity, __PID_MAX is reduce to 128
+ */
+struct proc* table[__PID_MAX - __PID_MIN];
+
+#endif
 
 /*
  * Create a proc structure.
@@ -64,6 +77,18 @@ struct proc *
 proc_create(const char *name)
 {
 	struct proc *proc;
+
+#if OPT_WAIT_PID
+	pid_t pid;
+
+	// find an assignable pid
+	for (pid = __PID_MIN; pid < __PID_MAX && table[pid - __PID_MIN]; pid++);
+	if (pid == __PID_MAX) {
+		// didn't find a valid pid
+		return NULL;
+	}
+
+#endif
 
 	proc = kmalloc(sizeof(*proc));
 	if (proc == NULL) {
@@ -85,6 +110,7 @@ proc_create(const char *name)
 	proc->p_cwd = NULL;
 
 #if OPT_WAIT_PID
+	proc->pid = pid;
 
 	/* initialize the condition variable for process termination */
 	proc->p_exit_cv_lock = lock_create(proc->p_name);
@@ -105,6 +131,8 @@ proc_create(const char *name)
 	/* set initial process exit code to 0xFFFF */
 	proc->p_exit_code = 0xFFFF;
 
+	/* set the entry in tha table */
+	table[pid - __PID_MIN] = proc;
 #endif
 
 	return proc;
@@ -194,6 +222,9 @@ proc_destroy(struct proc *proc)
 	spinlock_cleanup(&proc->p_lock);
 
 #if OPT_WAIT_PID
+	// clear the entry in the process table
+	table[proc->pid - __PID_MIN] = NULL;
+
 	lock_destroy(proc->p_exit_cv_lock);
 	cv_destroy(proc->p_exit_cv);
 #endif
@@ -369,6 +400,14 @@ int proc_wait (struct proc *p) {
 	proc_destroy(p);
 
 	return exit_code;
+}
+
+/**
+ * Return a struct proc given the pid
+ */
+struct proc *proc_get(pid_t pid) {
+	KASSERT(pid >= __PID_MIN && pid <= __PID_MAX);
+	return table[pid - __PID_MIN];
 }
 
 #endif

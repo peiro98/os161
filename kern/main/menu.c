@@ -139,8 +139,13 @@ common_prog(int nargs, char **args)
 	}
 
 #if OPT_WAIT_PID
-	exit_code = proc_wait(proc);
-	kprintf("\nProcess terminated with exit code %d\n", exit_code);	
+	//exit_code = proc_wait(proc);
+	if (sys_waitpid(proc->pid, &exit_code, 0) == -1) {
+		kprintf("\nError calling sys_waitpid");
+	} else {
+		kprintf("\nProcess terminated with exit code %d\n", exit_code);	
+	}
+	
 #endif
 
 	/*
