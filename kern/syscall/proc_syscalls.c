@@ -10,6 +10,7 @@
 #include <mips/trapframe.h>
 
 #include <kern/unistd.h>
+#include <kern/errno.h>
 
 #include "opt-wait_pid.h"
 
@@ -17,14 +18,11 @@ static void enter_child_process(void * args, long unsigned int nargs);
 
 
 int sys_exit(struct thread* calling_thread, int exit_code) {
-    /*calling_thread->exit_code = exit_code;
-
-    kprintf("PROCESS RETURNED WITH STATUS %d\n", exit_code);*/
-
     struct proc *proc;
     proc = calling_thread->t_proc;
 
-    // detach a thread 
+    // remove the calling thread
+    // from its process
     proc_remthread(calling_thread);
 
 #if OPT_WAIT_PID
@@ -47,45 +45,57 @@ int sys_exit(struct thread* calling_thread, int exit_code) {
     return 0;
 }
 
-pid_t sys_waitpid (pid_t pid, int *returncode, int flags) {
+int sys_waitpid (pid_t pid, int *returncode, int flags) {
 
 #if OPT_WAIT_PID
+    int status;
+
+    (void)flags;
+
     struct proc *p = proc_get(pid);
     if (p == NULL) {
         return -1;
     }
 
-    *returncode = proc_wait(p);
+    status = proc_wait(p);
+    if (returncode) {
+        *returncode = status;
+    }
+
+    return pid;
 #else 
     (void)pid;
     (void)returncode;
-#endif
     (void)flags;
-    
-    return pid;
+
+    return -1;
+#endif
 }
 
-pid_t sys_fork (struct trapframe *tf) {
+int sys_fork (struct trapframe *tf, pid_t *child_pid) {
 
 #if OPT_WAIT_PID
     int result;
-    struct proc* old, *new;
+    struct proc *new;
     struct trapframe *child_tf;
-    pid_t pid;
 
-    old = curproc;
-
-    new = proc_fork(old);
+    new = proc_fork(curproc);
 
     if (new == NULL) {
         // failure
-        return -1;
+        return ENOMEM;
     }
 
     child_tf = (struct trapframe*) kmalloc(sizeof(struct trapframe));
+    if (child_tf == NULL) {
+        proc_destroy(new);
+        return ENOMEM;
+    }
+
+    // copy the trapframe
     memcpy(child_tf, tf, sizeof(struct trapframe));
 
-    pid = new->pid;
+    *child_pid = new->pid;
 
     result = thread_fork(new->p_name /* thread name */,
 			new /* new process */,
@@ -94,13 +104,10 @@ pid_t sys_fork (struct trapframe *tf) {
 	if (result) {
 		kprintf("thread_fork failed: %s\n", strerror(result));
 		proc_destroy(new);
-		return -1;
+		return ENOMEM;
     }
 
-    //proc_wait(new);
-    //kprintf("\n%d dead\n", new->pid);
-
-    return pid;
+    return 0;
 #endif
 
 }

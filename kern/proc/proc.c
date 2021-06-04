@@ -66,7 +66,8 @@ struct proc *kproc;
  * 
  * For the sake of simplicity, __PID_MAX is reduce to 128
  */
-struct proc* table[__PID_MAX - __PID_MIN];
+static struct proc* table[__PID_MAX - __PID_MIN];
+static struct spinlock proc_table_spinlock;
 
 #endif
 
@@ -81,14 +82,6 @@ proc_create(const char *name)
 
 #if OPT_WAIT_PID
 	pid_t pid;
-
-	// find an assignable pid
-	for (pid = __PID_MIN; pid < __PID_MAX && table[pid - __PID_MIN]; pid++);
-	if (pid == __PID_MAX) {
-		// didn't find a valid pid
-		return NULL;
-	}
-
 #endif
 
 	proc = kmalloc(sizeof(*proc));
@@ -111,7 +104,6 @@ proc_create(const char *name)
 	proc->p_cwd = NULL;
 
 #if OPT_WAIT_PID
-	proc->pid = pid;
 
 	/* initialize the condition variable for process termination */
 	proc->p_exit_cv_lock = lock_create(proc->p_name);
@@ -132,8 +124,28 @@ proc_create(const char *name)
 	/* set initial process exit code to 0xFFFF */
 	proc->p_exit_code = 0xFFFF;
 
+	spinlock_acquire(&proc_table_spinlock);
+
+	// find an assignable pid
+	for (pid = __PID_MIN; pid < __PID_MAX && table[pid - __PID_MIN]; pid++);
+	if (pid == __PID_MAX) {
+		// didn't find a valid pid
+		cv_destroy(proc->p_exit_cv);
+		lock_destroy(proc->p_exit_cv_lock);
+		kfree(proc->p_name);
+		kfree(proc);
+
+		spinlock_release(&proc_table_spinlock);
+		return NULL;
+	}
+
+	proc->pid = pid;
+
 	/* set the entry in tha table */
 	table[pid - __PID_MIN] = proc;
+
+	spinlock_release(&proc_table_spinlock);
+
 #endif
 
 	return proc;
@@ -224,7 +236,9 @@ proc_destroy(struct proc *proc)
 
 #if OPT_WAIT_PID
 	// clear the entry in the process table
+	spinlock_acquire(&proc_table_spinlock);
 	table[proc->pid - __PID_MIN] = NULL;
+	spinlock_release(&proc_table_spinlock);
 
 	lock_destroy(proc->p_exit_cv_lock);
 	cv_destroy(proc->p_exit_cv);
@@ -407,8 +421,15 @@ int proc_wait (struct proc *p) {
  * Return a struct proc given the pid
  */
 struct proc *proc_get(pid_t pid) {
+	struct proc* p;
+
 	KASSERT(pid >= __PID_MIN && pid <= __PID_MAX);
-	return table[pid - __PID_MIN];
+	
+	spinlock_acquire(&proc_table_spinlock);
+	p = table[pid - __PID_MIN];
+	spinlock_release(&proc_table_spinlock);
+	
+	return p;
 }
 
 struct proc *proc_fork(struct proc *old) {
@@ -416,13 +437,11 @@ struct proc *proc_fork(struct proc *old) {
 
 	struct proc *new = proc_create_runprogram(old->p_name);
 	if (new == NULL) {
-		return ENOMEM;
+		return NULL;
 	}
 
-	//spinlock_acquire(&old->p_lock);
-	// copy the address space
+	// copy the address space from the father process
 	as_copy(old->p_addrspace, &new->p_addrspace);
-	//spinlock_release(&old->p_lock);
 
 	return new;
 }

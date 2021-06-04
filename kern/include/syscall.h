@@ -76,9 +76,9 @@ int sys_exit(struct thread* calling_thread, int exit_code);
 #endif
 
 // implemented in syscall/proc_syscalls.c
-pid_t sys_waitpid (pid_t pid, int *returncode, int flags);
+int sys_waitpid (pid_t pid, int *returncode, int flags);
 
-pid_t sys_fork (struct trapframe *tf);
+int sys_fork (struct trapframe *tf, pid_t *child_pid);
 pid_t sys_getpid (void);
 
 #endif /* _SYSCALL_H_ */
