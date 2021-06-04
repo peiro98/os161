@@ -49,6 +49,7 @@
 #include <addrspace.h>
 #include <vnode.h>
 #include <kern/limits.h>
+#include <kern/errno.h>
 
 #include "opt-wait_pid.h"
 
@@ -408,6 +409,22 @@ int proc_wait (struct proc *p) {
 struct proc *proc_get(pid_t pid) {
 	KASSERT(pid >= __PID_MIN && pid <= __PID_MAX);
 	return table[pid - __PID_MIN];
+}
+
+struct proc *proc_fork(struct proc *old) {
+	KASSERT(old != NULL);
+
+	struct proc *new = proc_create_runprogram(old->p_name);
+	if (new == NULL) {
+		return ENOMEM;
+	}
+
+	//spinlock_acquire(&old->p_lock);
+	// copy the address space
+	as_copy(old->p_addrspace, &new->p_addrspace);
+	//spinlock_release(&old->p_lock);
+
+	return new;
 }
 
 #endif

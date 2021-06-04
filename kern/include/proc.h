@@ -111,11 +111,14 @@ struct addrspace *proc_getas(void);
 /* Change the address space of the current process, and return the old one. */
 struct addrspace *proc_setas(struct addrspace *);
 
-#if OPT_WAIT_PID
 /* Wait for process termination */
 int proc_wait (struct proc *p);
 
 struct proc *proc_get(pid_t pid);
-#endif
+
+/**
+ * Create and return a new address space copying a previous one
+ */
+struct proc *proc_fork(struct proc *old);
 
 #endif /* _PROC_H_ */

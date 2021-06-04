@@ -35,6 +35,7 @@
 #include <thread.h>
 #include <current.h>
 #include <syscall.h>
+#include <addrspace.h>
 
 // assignments
 #include "opt-asst1.h"
@@ -144,6 +145,16 @@ syscall(struct trapframe *tf)
 			err = 0;
 		}
 		break;
+
+		case SYS_fork:
+		retval = sys_fork(tf);
+		err = (retval == -1) ? -1 : 0;
+		break;
+
+		case SYS_getpid:
+		retval = sys_getpid();
+		err = 0;
+		break;
 #endif
 
 	    default:
@@ -189,8 +200,23 @@ syscall(struct trapframe *tf)
  *
  * Thus, you can trash it and do things another way if you prefer.
  */
-void
-enter_forked_process(struct trapframe *tf)
-{
-	(void)tf;
+void enter_forked_process(struct trapframe *tf) {
+
+#if OPT_WAIT_PID
+	struct trapframe child;
+	memcpy(&child, tf, sizeof(struct trapframe));
+
+	child.tf_v0 = 0;
+	child.tf_a3 = 0;
+
+    // advance the PC
+    child.tf_epc = tf->tf_epc + 4;
+
+	as_activate();
+
+    mips_usermode(&child);
+#else 
+    (void)tf;
+#endif
+
 }
