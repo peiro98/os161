@@ -32,14 +32,12 @@
 
 #include "opt-asst1.h"
 #include "opt-wait_pid.h"
+#include "opt-lab05.h"
 
 #include <types.h>
+#include <thread.h>
 #include <cdefs.h> /* for __DEAD */
 struct trapframe; /* from <machine/trapframe.h> */
-
-#if OPT_ASST1
-#include <thread.h>
-#endif
 
 /*
  * The system call dispatcher.
@@ -67,9 +65,16 @@ int sys_reboot(int code);
 int sys___time(userptr_t user_seconds, userptr_t user_nanoseconds);
 
 #if OPT_ASST1
+
+#if OPT_LAB05
 // implemented in syscall/file_syscalls.c
-ssize_t sys_write(int filehandle, const void *buf, size_t size);
-ssize_t sys_read(int filehandle, void *buf, size_t size);
+int sys_open(userptr_t pathname, int flags, int *fd);
+int sys_close(int fd);
+#endif
+
+// implemented in syscall/file_syscalls.c
+int sys_write(int filehandle, const void *buf, size_t size, ssize_t *retval);
+int sys_read(int filehandle, void *buf, size_t size, ssize_t *retval);
 
 // implemented in syscall/proc_syscalls.c
 int sys_exit(struct thread* calling_thread, int exit_code);

@@ -38,12 +38,22 @@
 
 #include <spinlock.h>
 #include <synch.h>
+#include <limits.h>
 
 #include "opt-wait_pid.h"
+#include "opt-lab05.h"
 
 struct addrspace;
 struct thread;
 struct vnode;
+
+#if OPT_LAB05
+struct openfile {
+    struct vnode *of_v;
+    off_t of_offset;
+    unsigned int of_reference_count;
+};
+#endif
 
 /*
  * Process structure.
@@ -85,6 +95,10 @@ struct proc {
 	/* exit code of the process */
 	int p_exit_code;
 #endif
+
+#if OPT_LAB05
+	struct openfile *p_openfiles[OPEN_MAX];
+#endif
 };
 
 /* This is the process structure for the kernel and for kernel-only threads. */
@@ -120,5 +134,7 @@ struct proc *proc_get(pid_t pid);
  * Create and return a new address space copying a previous one
  */
 struct proc *proc_fork(struct proc *old);
+
+bool proc_opened (struct proc *p, struct openfile *of);
 
 #endif /* _PROC_H_ */

@@ -148,6 +148,10 @@ proc_create(const char *name)
 
 #endif
 
+#if OPT_LAB05
+	bzero(&proc->p_openfiles, sizeof(struct openfile*) * OPEN_MAX);
+#endif
+
 	return proc;
 }
 
@@ -443,7 +447,34 @@ struct proc *proc_fork(struct proc *old) {
 	// copy the address space from the father process
 	as_copy(old->p_addrspace, &new->p_addrspace);
 
+	// increment the reference count of open files
+	for (int i = 0; i < OPEN_MAX; i++) {
+		if (new->p_openfiles[i]) {
+			new->p_openfiles[i]->of_reference_count++;
+		}
+	}
+
 	return new;
+}
+
+/*
+ * Verify process opened a given file.
+ */ 
+bool proc_opened (struct proc *p, struct openfile *of) {
+#if OPT_LAB05
+	int i;
+
+	spinlock_acquire(&p->p_lock);
+	// verify the process opened the file
+	for (i = 0; i < OPEN_MAX && p->p_openfiles[i] != of; i++);
+	spinlock_release(&p->p_lock);
+
+	return !(i == OPEN_MAX);
+#else
+	(void)p;
+	(void)of;
+	return false;
+#endif
 }
 
 #endif

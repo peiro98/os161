@@ -456,3 +456,6 @@ defoption   cv_implementation
 
 # Lab4: implementation of waitpid
 defoption wait_pid
+
+# Lab5: implementation of file syscalls
+defoption lab05
